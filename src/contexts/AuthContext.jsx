@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut }                    from 'firebase/auth';
-import { auth }         from '../firebase';
-import { permissoesApi } from '../api';
+import { doc, getDoc }                                    from 'firebase/firestore';
+import { auth, db }    from '../firebase';
+import { permissoesApi, usuariosApi } from '../api';
 
 const AuthContext = createContext(null);
 
@@ -20,19 +21,40 @@ export function AuthProvider({ children }) {
         setLoading(false);
         return;
       }
+      // Busca cargo diretamente do Firestore pelo UID (fonte de verdade)
+      let firestoreUser = {};
+      try {
+        const snap = await getDoc(doc(db, 'usuarios', firebaseUser.uid));
+        if (snap.exists()) firestoreUser = snap.data();
+      } catch { /* sem acesso ao Firestore, continua sem cargo */ }
+
       // Busca permissões + dados do usuário na API
       try {
         const dados = await permissoesApi.obter();
         setPermState(dados.permState   || {});
         setCargoKeyMap(dados.cargoKeyMap || {});
         setSetores(dados.setores        || []);
-        // O cargo/setor/nome vêm do token decodificado pelo backend
-        // e a API retorna no contexto. Por ora, busca via /api/usuarios/me
-        // (simplificado: usamos o que vem do permState)
-        setUser({ email: firebaseUser.email, ...dados.currentUser });
+
+        // Se o backend não retornou currentUser (ou veio sem cargo),
+        // busca os dados do usuário logado na lista de usuários pelo email
+        let currentUser = dados.currentUser || {};
+        if (!currentUser.cargo) {
+          try {
+            const lista = await usuariosApi.listar();
+            const meusDados = lista.find(u => u.email === firebaseUser.email);
+            if (meusDados) currentUser = { ...currentUser, ...meusDados };
+          } catch { /* sem acesso à lista, continua sem cargo */ }
+        }
+
+        // Firestore tem prioridade sobre o que o backend retorna para cargo/nome
+        setUser({
+          email: firebaseUser.email,
+          ...currentUser,
+          ...firestoreUser,          // sobrescreve cargo, nome, etc. com dados frescos do Firestore
+        });
       } catch {
-        // Se a API falhar, mantém o usuário do Firebase sem dados extras
-        setUser({ email: firebaseUser.email });
+        // Se a API falhar, usa apenas dados do Firestore
+        setUser({ email: firebaseUser.email, ...firestoreUser });
       }
       setLoading(false);
     });
