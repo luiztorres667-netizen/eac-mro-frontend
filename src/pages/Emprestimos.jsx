@@ -27,17 +27,30 @@ function statusBadgeCls(s) {
   return `status-badge ${map[s] || ''}`;
 }
 
-function fmtData(iso) {
-  if (!iso) return '—';
-  try {
-    return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
-  } catch { return iso; }
+// Converte qualquer formato de data (string ISO, Firestore Timestamp) para Date
+function parseDate(val) {
+  if (!val) return null;
+  if (val._seconds !== undefined) return new Date(val._seconds * 1000); // Firestore Timestamp
+  if (val.seconds  !== undefined) return new Date(val.seconds  * 1000);
+  if (typeof val === 'string') return new Date(val.length === 10 ? val + 'T00:00:00' : val);
+  return new Date(val);
 }
 
-function diasRestantes(devISO) {
-  if (!devISO) return null;
+function fmtData(val) {
+  if (!val) return '—';
+  try {
+    const d = parseDate(val);
+    if (!d || isNaN(d)) return '—';
+    return d.toLocaleDateString('pt-BR');
+  } catch { return '—'; }
+}
+
+function diasRestantes(devVal) {
+  if (!devVal) return null;
+  const dev = parseDate(devVal);
+  if (!dev || isNaN(dev)) return null;
   const hoje = new Date(); hoje.setHours(0,0,0,0);
-  const dev  = new Date(devISO + 'T00:00:00');
+  dev.setHours(0,0,0,0);
   return Math.round((dev - hoje) / 86400000);
 }
 
@@ -730,17 +743,25 @@ export default function Emprestimos() {
   const [modalEstender, setModalEstender] = useState(null);
 
   const { pedidos: todosPedidos, loading, error, carregar: refresh } = usePedidos({});
+
+  // Filtragem local por aba e busca
   const pedidosFiltrados = todosPedidos.filter(p => {
     const statusOk = !TAB_STATUS[tab] || p.status === TAB_STATUS[tab];
     if (!statusOk) return false;
     if (!busca) return true;
     const q = busca.toLowerCase();
-    return (p.produto?.toLowerCase().includes(q) || p.solicitante?.toLowerCase().includes(q) || p.concedente?.toLowerCase().includes(q) || String(p.numeroPedido||'').toLowerCase().includes(q));
+    return (
+      p.produto?.toLowerCase().includes(q) ||
+      p.solicitante?.toLowerCase().includes(q) ||
+      p.concedente?.toLowerCase().includes(q) ||
+      String(p.numeroPedido || '').toLowerCase().includes(q)
+    );
   });
+
   const pedidos = pedidosFiltrados;
 
   // Contagens para badges
-  const nPendentes = pedidos.filter(p => p.status === 'pendente').length;
+  const nPendentes = todosPedidos.filter(p => p.status === 'pendente').length;
 
   function fecharTudo() {
     setModalNovo(false); setModalDetalhe(null); setModalAprovar(null);
@@ -834,4 +855,3 @@ export default function Emprestimos() {
     </>
   );
 }
-

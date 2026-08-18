@@ -2,9 +2,16 @@ import { useState, useEffect } from 'react';
 import { api } from '../api';
 
 /* ── Helpers ── */
-function fmtData(iso) {
-  if (!iso) return '—';
-  try { return new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR'); } catch { return iso; }
+function parseDate(val) {
+  if (!val) return null;
+  if (val._seconds !== undefined) return new Date(val._seconds * 1000);
+  if (val.seconds  !== undefined) return new Date(val.seconds  * 1000);
+  if (typeof val === 'string') return new Date(val.length === 10 ? val + 'T00:00:00' : val);
+  return new Date(val);
+}
+function fmtData(val) {
+  if (!val) return '—';
+  try { const d = parseDate(val); return d && !isNaN(d) ? d.toLocaleDateString('pt-BR') : '—'; } catch { return '—'; }
 }
 
 const STATUS_LABEL = {
@@ -95,8 +102,8 @@ export default function Relatorios() {
     let lista = [...pedidos];
     if (filtro.status) lista = lista.filter(p => p.status === filtro.status);
     if (filtro.mg)     lista = lista.filter(p => p.mgSolicitante === filtro.mg || p.mgConcedente === filtro.mg);
-    if (filtro.de)     lista = lista.filter(p => (p.criadoEm || '') >= filtro.de);
-    if (filtro.ate)    lista = lista.filter(p => (p.criadoEm || '') <= filtro.ate);
+    if (filtro.de)     lista = lista.filter(p => { const d = parseDate(p.criadoEm); return d && d.toISOString().slice(0,10) >= filtro.de; });
+    if (filtro.ate)    lista = lista.filter(p => { const d = parseDate(p.criadoEm); return d && d.toISOString().slice(0,10) <= filtro.ate; });
     setFiltrado(lista);
   }, [pedidos, filtro]);
 
