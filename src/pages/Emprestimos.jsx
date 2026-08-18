@@ -729,20 +729,15 @@ export default function Emprestimos() {
   const [modalDevolver, setModalDevolver] = useState(null);
   const [modalEstender, setModalEstender] = useState(null);
 
-  const filtro = TAB_STATUS[tab] ? { status: TAB_STATUS[tab] } : {};
-  const { pedidos, loading, error, carregar: refresh } = usePedidos(filtro);
-
-  // Filtragem local por busca
-  const pedidosFiltrados = pedidos.filter(p => {
+  const { pedidos: todosPedidos, loading, error, carregar: refresh } = usePedidos({});
+  const pedidosFiltrados = todosPedidos.filter(p => {
+    const statusOk = !TAB_STATUS[tab] || p.status === TAB_STATUS[tab];
+    if (!statusOk) return false;
     if (!busca) return true;
     const q = busca.toLowerCase();
-    return (
-      p.produto?.toLowerCase().includes(q) ||
-      p.solicitante?.toLowerCase().includes(q) ||
-      p.concedente?.toLowerCase().includes(q) ||
-      p.numeroPedido?.toLowerCase().includes(q)
-    );
+    return (p.produto?.toLowerCase().includes(q) || p.solicitante?.toLowerCase().includes(q) || p.concedente?.toLowerCase().includes(q) || String(p.numeroPedido||'').toLowerCase().includes(q));
   });
+  const pedidos = pedidosFiltrados;
 
   // Contagens para badges
   const nPendentes = pedidos.filter(p => p.status === 'pendente').length;
@@ -839,3 +834,4 @@ export default function Emprestimos() {
     </>
   );
 }
+

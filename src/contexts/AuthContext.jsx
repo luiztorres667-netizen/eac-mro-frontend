@@ -43,9 +43,10 @@ export function AuthProvider({ children }) {
   function perm(permId) {
     if (!user) return false;
     if (user.cargo === 'Admin') return true;
-    const item    = permState[permId];
+    if (Object.keys(permState).length === 0) return true;
+    const item = permState[permId];
     if (!item) return false;
-    const cargoKey = cargoKeyMap[user.cargo] || 'mutuario';
+    const cargoKey = cargoKeyMap[user.cargo] || user.cargo?.toLowerCase() || 'mutuario';
     return !!item[cargoKey];
   }
 
@@ -63,3 +64,5 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   return useContext(AuthContext);
 }
+
+

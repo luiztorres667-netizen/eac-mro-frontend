@@ -11,7 +11,7 @@ export function usePedidos(filtros = {}) {
     setError(null);
     try {
       const data = await pedidosApi.listar(filtros);
-      setPedidos(data);
+      setPedidos(Array.isArray(data) ? data : data.pedidos || []);
     } catch (e) {
       setError(e.message);
     } finally {
