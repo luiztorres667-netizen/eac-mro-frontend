@@ -7,13 +7,10 @@ import Usuarios      from './pages/Usuarios';
 import Notificacoes  from './pages/Notificacoes';
 import Layout        from './components/Layout';
 
-function PrivateRoute({ children, permId }) {
-  const { user, perm, loading } = useAuth();
-
+function PrivateRoute({ children }) {
+  const { user, loading } = useAuth();
   if (loading) return <div className="loading-full">Carregando…</div>;
   if (!user)   return <Navigate to="/login" replace />;
-  if (permId && !perm(permId)) return <Navigate to="/" replace />;
-
   return children;
 }
 
@@ -30,16 +27,10 @@ function AppRoutes() {
           <Layout />
         </PrivateRoute>
       }>
-        <Route index          element={<Emprestimos />} />
-        <Route path="relatorios" element={
-          <PrivateRoute permId="rel_ver"><Relatorios /></PrivateRoute>
-        } />
-        <Route path="usuarios" element={
-          <PrivateRoute permId="usr_ver"><Usuarios /></PrivateRoute>
-        } />
-        <Route path="notificacoes" element={
-          <PrivateRoute permId="notif_ver"><Notificacoes /></PrivateRoute>
-        } />
+        <Route index             element={<Emprestimos />} />
+        <Route path="relatorios"   element={<Relatorios />} />
+        <Route path="usuarios"     element={<Usuarios />} />
+        <Route path="notificacoes" element={<Notificacoes />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
