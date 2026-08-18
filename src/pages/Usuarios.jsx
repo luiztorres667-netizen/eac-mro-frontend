@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth }     from '../contexts/AuthContext';
 import { useUsuarios } from '../hooks/useUsuarios';
 import { permissoesApi } from '../api';
@@ -297,16 +297,52 @@ const PERMS_DEF = [
 const GRUPOS = [...new Set(PERMS_DEF.map(p => p.grupo))];
 const CARGOS_PERM = ['Usuário', 'Solicitante/Responsável', 'Almoxarife', 'Gestor', 'Admin'];
 
+function defaultState() {
+  const s = {};
+  CARGOS_PERM.forEach(c => { s[c] = {}; PERMS_DEF.forEach(p => { s[c][p.id] = c === 'Admin'; }); });
+  return s;
+}
+
 function ControleAcesso() {
-  const [state, setState] = useState(() => {
-    const s = {};
-    CARGOS_PERM.forEach(c => { s[c] = {}; PERMS_DEF.forEach(p => { s[c][p.id] = c === 'Admin'; }); });
-    return s;
-  });
-  const [saved, setSaved] = useState(false);
+  const [state, setState]       = useState(defaultState);
+  const [loadingPerms, setLoadingPerms] = useState(true);
+  const [saved, setSaved]       = useState(false);
+
+  // Carrega permissões salvas da API ao montar
+  useEffect(() => {
+    permissoesApi.obter().then(dados => {
+      const ps = dados.permState || {};
+      if (Object.keys(ps).length === 0) { setLoadingPerms(false); return; }
+
+      const firstKey = Object.keys(ps)[0];
+      if (CARGOS_PERM.includes(firstKey)) {
+        // Formato cargo→perm — usa diretamente
+        setState(s => {
+          const next = { ...s };
+          CARGOS_PERM.forEach(c => {
+            if (ps[c]) next[c] = { ...next[c], ...ps[c], ...( c === 'Admin' ? {} : {} ) };
+          });
+          // Admin sempre tem tudo
+          PERMS_DEF.forEach(p => { next['Admin'][p.id] = true; });
+          return next;
+        });
+      } else {
+        // Formato perm→cargo — converte
+        const conv = defaultState();
+        PERMS_DEF.forEach(p => {
+          if (ps[p.id]) {
+            CARGOS_PERM.forEach(c => {
+              conv[c][p.id] = c === 'Admin' ? true : !!ps[p.id][c];
+            });
+          }
+        });
+        setState(conv);
+      }
+    }).catch(() => {}).finally(() => setLoadingPerms(false));
+  }, []);
 
   function toggle(cargo, permId) {
-    if (cargo === 'Admin') return; // Admin sempre tem tudo
+    if (cargo === 'Admin') return;
     setState(s => ({
       ...s,
       [cargo]: { ...s[cargo], [permId]: !s[cargo][permId] }
@@ -316,11 +352,16 @@ function ControleAcesso() {
 
   async function salvar() {
     try {
-      await permissoesApi.salvar(state);
+      // Garante Admin com tudo antes de salvar
+      const toSave = { ...state, Admin: {} };
+      PERMS_DEF.forEach(p => { toSave['Admin'][p.id] = true; });
+      await permissoesApi.salvar(toSave);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) { alert('Erro ao salvar: ' + e.message); }
   }
+
+  if (loadingPerms) return <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>Carregando permissões…</div>;
 
   return (
     <>

@@ -43,10 +43,17 @@ export function AuthProvider({ children }) {
   function perm(permId) {
     if (!user) return false;
     if (user.cargo === 'Admin') return true;
+    // Se permState veio vazio da API, libera tudo para não bloquear navegação (setup inicial)
     if (Object.keys(permState).length === 0) return true;
+
+    // Formato cargo→perm: { "Usuário": { "rel_ver": true, ... } }
+    const cargoPerm = permState[user.cargo];
+    if (cargoPerm !== undefined) return !!cargoPerm[permId];
+
+    // Fallback: formato perm→cargo: { "rel_ver": { "usuario": true } }
     const item = permState[permId];
     if (!item) return false;
-    const cargoKey = cargoKeyMap[user.cargo] || user.cargo?.toLowerCase() || 'mutuario';
+    const cargoKey = cargoKeyMap[user.cargo] || user.cargo || user.cargo?.toLowerCase() || 'mutuario';
     return !!item[cargoKey];
   }
 
@@ -64,5 +71,3 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   return useContext(AuthContext);
 }
-
-
