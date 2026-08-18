@@ -1,10 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth }  from './contexts/AuthContext';
-import Login       from './pages/Login';
-import Emprestimos from './pages/Emprestimos';
-import Relatorios  from './pages/Relatorios';
-import Usuarios    from './pages/Usuarios';
-import Layout      from './components/Layout';
+import Login         from './pages/Login';
+import Emprestimos   from './pages/Emprestimos';
+import Relatorios    from './pages/Relatorios';
+import Usuarios      from './pages/Usuarios';
+import Notificacoes  from './pages/Notificacoes';
+import Layout        from './components/Layout';
 
 function PrivateRoute({ children, permId }) {
   const { user, perm, loading } = useAuth();
@@ -35,6 +36,9 @@ function AppRoutes() {
         } />
         <Route path="usuarios" element={
           <PrivateRoute permId="usr_ver"><Usuarios /></PrivateRoute>
+        } />
+        <Route path="notificacoes" element={
+          <PrivateRoute permId="notif_ver"><Notificacoes /></PrivateRoute>
         } />
       </Route>
 
