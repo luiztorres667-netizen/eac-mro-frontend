@@ -1,4 +1,5 @@
 /* ── Google Fonts ── */
+
 @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;800&display=swap');
 
 /* ══════════════════════════════════════
@@ -684,3 +685,90 @@ body.light .modal { border-color: #e2e6f0; background: #ffffff; }
 body.light .field input,
 body.light .field select,
 body.light .field textarea { background: #f5f7fc; border-color: #dde2f0; color: #001a70; }
+/* ══════════════════════════════════════
+   LOGIN
+══════════════════════════════════════ */
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 20px;
+}
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 36px 32px;
+  box-shadow: var(--shadow-lg);
+}
+.login-logo {
+  font-family: var(--font);
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--verde);
+  letter-spacing: .08em;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.login-titulo {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+  margin-bottom: 24px;
+}
+.login-field { margin-bottom: 14px; }
+.login-field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 6px;
+}
+.login-field input, .login-field select {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color .15s;
+}
+.login-field input:focus, .login-field select:focus { border-color: var(--verde); }
+.btn-block { width: 100%; margin-top: 8px; padding: 11px; font-size: 13px; font-weight: 700; }
+.login-links { display: flex; justify-content: space-between; margin-top: 16px; }
+.login-links button {
+  background: none; border: none; color: var(--azul-soft);
+  font-family: var(--font); font-size: 12px; cursor: pointer; text-decoration: underline;
+}
+.login-links button:hover { color: var(--verde); }
+.btn-back {
+  background: none; border: none; color: var(--muted);
+  font-family: var(--font); font-size: 12px; cursor: pointer; margin-bottom: 16px; display: block;
+}
+.btn-back:hover { color: var(--text); }
+.alert { border-radius: var(--radius-sm); padding: 10px 14px; font-size: 12px; font-weight: 600; margin-bottom: 14px; }
+.alert-error { background: var(--red-dim); color: var(--red); border: 1px solid var(--red); }
+.alert-ok    { background: var(--verde-dim); color: var(--verde); border: 1px solid var(--verde); }
+.btn-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.btn-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.btn-setor {
+  padding: 8px 6px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--muted); font-family: var(--font); font-size: 11px;
+  font-weight: 600; cursor: pointer; text-align: center; transition: all .15s;
+}
+.btn-setor:hover { border-color: var(--verde); color: var(--verde); }
+.btn-setor.ativo { border-color: var(--verde); background: var(--verde-dim); color: var(--verde); }
+.obrigatorio { color: var(--red); font-size: 10px; font-weight: 500; margin-left: 4px; }
+.opcional    { color: var(--muted); font-size: 10px; font-weight: 500; margin-left: 4px; }
