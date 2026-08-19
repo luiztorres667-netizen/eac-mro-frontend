@@ -309,11 +309,16 @@ function PedidoCard({ p, onDetalhe, onAprovar, onRecusar, onDevolver, onEstender
       </div>
 
       {/* Materiais */}
-      {(p.materiais?.length > 0 || p.itens?.length > 0) && (
-        <div className="pedido-materiais">
-          📦 {(p.materiais || p.itens || []).join(' · ')}
-        </div>
-      )}
+      {(() => {
+        const mat = Array.isArray(p.materiais) ? p.materiais
+                  : Array.isArray(p.itens)     ? p.itens
+                  : [];
+        return mat.length > 0 ? (
+          <div className="pedido-materiais">
+            📦 {mat.join(' · ')}
+          </div>
+        ) : null;
+      })()}
 
       {/* Ocorrência */}
       {p.ocorrencia?.tipo && (
@@ -860,8 +865,10 @@ function ModalDetalhe({ pedido, onClose }) {
   // fotos: array de base64 ou URLs
   const fotos = pedido.fotos || [];
 
-  // materiais ou itens
-  const itens = pedido.materiais || pedido.itens || [];
+  // materiais ou itens — garante que seja sempre um array
+  const itens = Array.isArray(pedido.materiais) ? pedido.materiais
+              : Array.isArray(pedido.itens)     ? pedido.itens
+              : [];
 
   // countdown display
   const diasLabel = (() => {
