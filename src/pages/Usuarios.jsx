@@ -3,14 +3,20 @@ import { useAuth }     from '../contexts/AuthContext';
 import { useUsuarios } from '../hooks/useUsuarios';
 import { permissoesApi } from '../api';
 
+/* ──────────────────────────────────────
+   CARGOS DO SISTEMA
+────────────────────────────────────── */
+const CARGOS = ['Usuário', 'Arte', 'Cenografia', 'Almoxarife', 'Gestor', 'Admin'];
+
 /* ── Mapa de cargos → chip class ── */
 function cargoCls(cargo) {
   if (!cargo) return '';
   const c = cargo.toLowerCase();
-  if (c.includes('gestor'))    return 'gestor';
-  if (c.includes('admin'))     return 'admin';
-  if (c.includes('almox'))     return 'almox';
-  if (c.includes('solic'))     return 'sol';
+  if (c === 'admin')       return 'admin';
+  if (c === 'gestor')      return 'gestor';
+  if (c === 'almoxarife')  return 'almox';
+  if (c === 'arte')        return 'arte';
+  if (c === 'cenografia')  return 'ceno';
   return '';
 }
 
@@ -22,8 +28,6 @@ function iniciais(nome, email) {
 /* ══════════════════════════════════════
    MODAL NOVO USUÁRIO
 ══════════════════════════════════════ */
-const CARGOS = ['Usuário', 'Solicitante/Responsável', 'Almoxarife', 'Gestor', 'Admin'];
-
 function ModalNovoUsuario({ onClose, onSalvo }) {
   const [form, setForm]   = useState({ nome: '', email: '', cargo: 'Usuário', matricula: '' });
   const [saving, setSaving] = useState(false);
@@ -288,46 +292,57 @@ const PERMS_DEF = [
   { id: 'eac_aprovar',  label: 'Aprovar / Recusar',     grupo: 'Controle EAC' },
   { id: 'eac_devolver', label: 'Registrar devolução',   grupo: 'Controle EAC' },
   { id: 'eac_estender', label: 'Estender prazo',        grupo: 'Controle EAC' },
-  { id: 'rel_ver',      label: 'Ver relatórios',        grupo: 'Relatórios' },
-  { id: 'usr_ver',      label: 'Ver usuários',          grupo: 'Usuários' },
-  { id: 'usr_editar',   label: 'Editar usuários',       grupo: 'Usuários' },
+  { id: 'rel_ver',      label: 'Ver relatórios',        grupo: 'Relatórios'   },
+  { id: 'usr_ver',      label: 'Ver usuários',          grupo: 'Usuários'     },
+  { id: 'usr_editar',   label: 'Editar usuários',       grupo: 'Usuários'     },
   { id: 'notif_ver',    label: 'Ver notificações',      grupo: 'Notificações' },
 ];
 
 const GRUPOS = [...new Set(PERMS_DEF.map(p => p.grupo))];
-const CARGOS_PERM = ['Usuário', 'Solicitante/Responsável', 'Almoxarife', 'Gestor', 'Admin'];
+const CARGOS_PERM = ['Usuário', 'Arte', 'Cenografia', 'Almoxarife', 'Gestor', 'Admin'];
+
+/* Cor de acento por cargo */
+const CARGO_COR = {
+  'Usuário':    { bg: 'var(--border)',     fg: 'var(--label)',  dim: 'transparent'      },
+  'Arte':       { bg: 'var(--indigo)',     fg: '#fff',          dim: 'var(--indigo-dim)' },
+  'Cenografia': { bg: 'var(--amber)',      fg: '#111',          dim: 'var(--amber-dim)'  },
+  'Almoxarife': { bg: '#22c55e',          fg: '#fff',          dim: '#22c55e14'         },
+  'Gestor':     { bg: 'var(--verde)',      fg: '#000',          dim: 'var(--verde-dim)'  },
+  'Admin':      { bg: 'var(--red)',        fg: '#fff',          dim: 'var(--red-dim)'    },
+};
 
 function defaultState() {
   const s = {};
-  CARGOS_PERM.forEach(c => { s[c] = {}; PERMS_DEF.forEach(p => { s[c][p.id] = c === 'Admin'; }); });
+  CARGOS_PERM.forEach(c => {
+    s[c] = {};
+    PERMS_DEF.forEach(p => { s[c][p.id] = c === 'Admin'; });
+  });
   return s;
 }
 
 function ControleAcesso() {
-  const [state, setState]       = useState(defaultState);
-  const [loadingPerms, setLoadingPerms] = useState(true);
-  const [saved, setSaved]       = useState(false);
+  const [state, setState]           = useState(defaultState);
+  const [loadingPerms, setLoading]  = useState(true);
+  const [saved, setSaved]           = useState(false);
+  const [cargoAtivo, setCargoAtivo] = useState('Arte');
 
-  // Carrega permissões salvas da API ao montar
   useEffect(() => {
     permissoesApi.obter().then(dados => {
       const ps = dados.permState || {};
-      if (Object.keys(ps).length === 0) { setLoadingPerms(false); return; }
+      if (Object.keys(ps).length === 0) { setLoading(false); return; }
 
       const firstKey = Object.keys(ps)[0];
       if (CARGOS_PERM.includes(firstKey)) {
-        // Formato cargo→perm — usa diretamente
         setState(s => {
           const next = { ...s };
           CARGOS_PERM.forEach(c => {
-            if (ps[c]) next[c] = { ...next[c], ...ps[c], ...( c === 'Admin' ? {} : {} ) };
+            if (ps[c]) next[c] = { ...next[c], ...ps[c] };
           });
-          // Admin sempre tem tudo
           PERMS_DEF.forEach(p => { next['Admin'][p.id] = true; });
           return next;
         });
       } else {
-        // Formato perm→cargo — converte
+        // Formato legado perm→cargo
         const conv = defaultState();
         PERMS_DEF.forEach(p => {
           if (ps[p.id]) {
@@ -338,7 +353,7 @@ function ControleAcesso() {
         });
         setState(conv);
       }
-    }).catch(() => {}).finally(() => setLoadingPerms(false));
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   function toggle(cargo, permId) {
@@ -352,7 +367,6 @@ function ControleAcesso() {
 
   async function salvar() {
     try {
-      // Garante Admin com tudo antes de salvar
       const toSave = { ...state, Admin: {} };
       PERMS_DEF.forEach(p => { toSave['Admin'][p.id] = true; });
       await permissoesApi.salvar(toSave);
@@ -361,71 +375,175 @@ function ControleAcesso() {
     } catch (e) { alert('Erro ao salvar: ' + e.message); }
   }
 
-  if (loadingPerms) return <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>Carregando permissões…</div>;
+  if (loadingPerms) return (
+    <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>Carregando permissões…</div>
+  );
+
+  const cor = CARGO_COR[cargoAtivo] || CARGO_COR['Usuário'];
+  const isAdmin = cargoAtivo === 'Admin';
+
+  /* Conta permissões ativas por cargo (para os chips) */
+  function countAtivas(c) {
+    return PERMS_DEF.filter(p => state[c]?.[p.id]).length;
+  }
 
   return (
-    <>
-      <div className="section-header" style={{ marginBottom: 4 }}>
-        <h3>Controle de acesso por cargo</h3>
-        <button className="btn btn-primary btn-sm" onClick={salvar}>
-          {saved ? '✓ Salvo!' : 'Salvar alterações'}
+    <div style={{ maxWidth: 520 }}>
+      {/* ── Cabeçalho ── */}
+      <div className="section-header" style={{ marginBottom: 6 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Controle de acesso</h3>
+          <p style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500, margin: '3px 0 0' }}>
+            Selecione um cargo e ajuste suas permissões
+          </p>
+        </div>
+        <button
+          className={`btn btn-sm ${saved ? 'btn-green' : 'btn-primary'}`}
+          onClick={salvar}
+          style={{ minWidth: 120 }}
+        >
+          {saved
+            ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Salvo!</>
+            : 'Salvar alterações'
+          }
         </button>
       </div>
-      <p style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500, marginBottom: 20 }}>
-        Defina o que cada cargo pode visualizar e executar. Alterações são aplicadas imediatamente.
-      </p>
 
-      <div style={{ overflowX: 'auto' }}>
-        <table className="tabela" style={{ minWidth: 600 }}>
-          <thead>
-            <tr>
-              <th style={{ minWidth: 160 }}>Permissão</th>
-              {CARGOS_PERM.map(c => (
-                <th key={c} style={{ textAlign: 'center', minWidth: 90 }}>{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {GRUPOS.map(grupo => (
-              <>
-                <tr key={grupo}>
-                  <td colSpan={CARGOS_PERM.length + 1}
-                    style={{ background: 'var(--bg)', fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: 'var(--verde)', padding: '8px 12px 4px' }}>
-                    {grupo}
-                  </td>
-                </tr>
-                {PERMS_DEF.filter(p => p.grupo === grupo).map(p => (
-                  <tr key={p.id}>
-                    <td style={{ fontWeight: 600, color: 'var(--label)' }}>{p.label}</td>
-                    {CARGOS_PERM.map(c => (
-                      <td key={c} style={{ textAlign: 'center' }}>
-                        <button
-                          onClick={() => toggle(c, p.id)}
-                          title={c === 'Admin' ? 'Admin tem acesso total' : state[c][p.id] ? 'Permitido — clique para revogar' : 'Negado — clique para permitir'}
-                          style={{
-                            width: 22, height: 22,
-                            borderRadius: 6,
-                            border: `1.5px solid ${state[c][p.id] ? 'var(--verde)' : 'var(--border)'}`,
-                            background: state[c][p.id] ? 'var(--verde-dim)' : 'transparent',
-                            cursor: c === 'Admin' ? 'not-allowed' : 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            transition: 'all .15s',
-                            margin: '0 auto',
-                          }}
-                        >
-                          {state[c][p.id] && (
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--verde)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                          )}
-                        </button>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </>
-            ))}
-          </tbody>
-        </table>
+      {/* ── Cargo pills ── */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 20, marginTop: 4 }}>
+        {CARGOS_PERM.map(c => {
+          const ativo = c === cargoAtivo;
+          const cc = CARGO_COR[c] || CARGO_COR['Usuário'];
+          const n = countAtivas(c);
+          return (
+            <button
+              key={c}
+              onClick={() => setCargoAtivo(c)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px',
+                borderRadius: 99,
+                border: `1.5px solid ${ativo ? cc.bg : 'var(--border)'}`,
+                background: ativo ? cc.dim : 'var(--card)',
+                color: ativo ? cc.bg : 'var(--label)',
+                fontSize: 11, fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all .15s',
+                fontFamily: 'var(--font)',
+              }}
+            >
+              {c === 'Admin' && <span style={{ fontSize: 9 }}>🔒</span>}
+              {c}
+              <span style={{
+                background: ativo ? cc.bg : 'var(--border)',
+                color: ativo ? cc.fg : 'var(--muted)',
+                fontSize: 9, fontWeight: 800,
+                borderRadius: 99, padding: '1px 5px',
+                minWidth: 16, textAlign: 'center',
+              }}>
+                {n}/{PERMS_DEF.length}
+              </span>
+            </button>
+          );
+        })}
       </div>
-    </>
+
+      {/* ── Painel de permissões do cargo ativo ── */}
+      <div style={{
+        background: 'var(--card)',
+        border: `1.5px solid ${cor.bg}40`,
+        borderRadius: 12,
+        overflow: 'hidden',
+      }}>
+        {/* Topo colorido com nome do cargo */}
+        <div style={{
+          background: cor.dim,
+          borderBottom: `1px solid ${cor.bg}30`,
+          padding: '10px 16px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: cor.bg, textTransform: 'uppercase', letterSpacing: '.08em' }}>
+            {cargoAtivo}
+          </span>
+          {isAdmin
+            ? <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>🔒 Acesso total — não editável</span>
+            : <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>
+                {countAtivas(cargoAtivo)} de {PERMS_DEF.length} permissões ativas
+              </span>
+          }
+        </div>
+
+        {/* Lista de permissões agrupadas */}
+        {GRUPOS.map((grupo, gi) => (
+          <div key={grupo}>
+            {/* Separador de grupo */}
+            <div style={{
+              padding: '8px 16px 4px',
+              fontSize: 9, fontWeight: 800, textTransform: 'uppercase',
+              letterSpacing: '.1em', color: 'var(--verde)',
+              background: gi > 0 ? 'var(--bg)' : undefined,
+              borderTop: gi > 0 ? '1px solid var(--border-s)' : undefined,
+            }}>
+              {grupo}
+            </div>
+
+            {PERMS_DEF.filter(p => p.grupo === grupo).map((p, pi, arr) => {
+              const on = state[cargoAtivo]?.[p.id] ?? false;
+              return (
+                <div
+                  key={p.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 16px',
+                    borderBottom: pi < arr.length - 1 ? '1px solid var(--border-s)' : undefined,
+                    background: on && !isAdmin ? `${cor.bg}08` : undefined,
+                    transition: 'background .15s',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: on ? 'var(--text)' : 'var(--label)' }}>
+                      {p.label}
+                    </div>
+                  </div>
+
+                  {/* Toggle switch */}
+                  <button
+                    onClick={() => toggle(cargoAtivo, p.id)}
+                    disabled={isAdmin}
+                    title={isAdmin ? 'Admin tem acesso total' : on ? 'Clique para revogar' : 'Clique para permitir'}
+                    style={{
+                      width: 40, height: 22, borderRadius: 99,
+                      border: 'none',
+                      background: on ? cor.bg : 'var(--border)',
+                      position: 'relative',
+                      cursor: isAdmin ? 'not-allowed' : 'pointer',
+                      transition: 'background .2s',
+                      flexShrink: 0,
+                      opacity: isAdmin ? 0.7 : 1,
+                    }}
+                  >
+                    <span style={{
+                      position: 'absolute',
+                      top: 3, left: on ? 21 : 3,
+                      width: 16, height: 16, borderRadius: '50%',
+                      background: '#fff',
+                      transition: 'left .2s',
+                      boxShadow: '0 1px 3px rgba(0,0,0,.3)',
+                      display: 'block',
+                    }} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
+      {/* Dica */}
+      <p style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 500, marginTop: 12, lineHeight: 1.5 }}>
+        As alterações só são aplicadas após clicar em <strong style={{ color: 'var(--label)' }}>Salvar alterações</strong>.
+        O cargo Admin sempre tem acesso total ao sistema.
+      </p>
+    </div>
   );
 }
