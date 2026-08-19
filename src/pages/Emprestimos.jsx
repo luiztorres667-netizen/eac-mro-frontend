@@ -1,7 +1,9 @@
-import { useState, useRef } from 'react';
-import { useAuth }    from '../contexts/AuthContext';
-import { usePedidos } from '../hooks/usePedidos';
-import { api }        from '../api';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { collection, getDocs }                       from 'firebase/firestore';
+import { db }                                         from '../firebase';
+import { useAuth }                                    from '../contexts/AuthContext';
+import { usePedidos }                                 from '../hooks/usePedidos';
+import { api, usuariosApi }                           from '../api';
 
 /* ══════════════════════════════════════
    HELPERS
@@ -27,10 +29,9 @@ function statusBadgeCls(s) {
   return `status-badge ${map[s] || ''}`;
 }
 
-// Converte qualquer formato de data (string ISO, Firestore Timestamp) para Date
 function parseDate(val) {
   if (!val) return null;
-  if (val._seconds !== undefined) return new Date(val._seconds * 1000); // Firestore Timestamp
+  if (val._seconds !== undefined) return new Date(val._seconds * 1000);
   if (val.seconds  !== undefined) return new Date(val.seconds  * 1000);
   if (typeof val === 'string') return new Date(val.length === 10 ? val + 'T00:00:00' : val);
   return new Date(val);
@@ -54,11 +55,175 @@ function diasRestantes(devVal) {
   return Math.round((dev - hoje) / 86400000);
 }
 
+// Extrai solicitante e concedente de um pedido,
+// suportando tanto o formato legado (solicitanteNome/Email)
+// quanto o formato novo (solicitante/concedente como strings)
+function getPartes(p) {
+  const solNome  = p.solicitanteNome  || p.nomeSolicitanteForm || p.solicitante  || p.criadoPorNome || '—';
+  const solEmail = p.solicitanteEmail || '';
+  const conNome  = p.concedenteNome   || p.nomeResponsavel     || p.concedente   || '—';
+  const conEmail = p.concedenteEmail  || '';
+  return {
+    sol: { nome: solNome, email: solEmail },
+    con: { nome: conNome, email: conEmail },
+  };
+}
+
+/* ══════════════════════════════════════
+   HOOK: PRODUTOS DO FIRESTORE
+══════════════════════════════════════ */
+function useProdutos() {
+  const [produtos, setProdutos] = useState([]);
+  useEffect(() => {
+    getDocs(collection(db, 'produtos'))
+      .then(snap => {
+        const lista = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(p => p.ativo !== false && p.nome)
+          .sort((a, b) => a.nome.localeCompare(b.nome));
+        setProdutos(lista);
+      })
+      .catch(() => { /* sem acesso ao Firestore, sem sugestões */ });
+  }, []);
+  return produtos;
+}
+
+/* ══════════════════════════════════════
+   HOOK: USUÁRIOS
+══════════════════════════════════════ */
+function useUsuariosLista() {
+  const [usuarios, setUsuarios] = useState([]);
+  useEffect(() => {
+    usuariosApi.listar()
+      .then(lista => setUsuarios(Array.isArray(lista) ? lista : []))
+      .catch(() => {});
+  }, []);
+  return usuarios;
+}
+
+/* ══════════════════════════════════════
+   COMPONENTE: USER SEARCH (MENCAO)
+══════════════════════════════════════ */
+function UserSearch({ value, onChange, usuarios, placeholder }) {
+  const [query, setQuery] = useState('');
+  const [open,  setOpen]  = useState(false);
+  const inputRef = useRef();
+
+  const filtered = query.length >= 1
+    ? usuarios.filter(u =>
+        (u.nome       || '').toLowerCase().includes(query.toLowerCase()) ||
+        (u.email      || '').toLowerCase().includes(query.toLowerCase()) ||
+        (u.matricula  || '').toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 8)
+    : [];
+
+  function select(u) {
+    onChange({ nome: u.nome, email: u.email, matricula: u.matricula, id: u.id });
+    setQuery('');
+    setOpen(false);
+  }
+
+  function clear() {
+    onChange(null);
+    setQuery('');
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
+  if (value) {
+    return (
+      <div className="mencao-chip-selected">
+        <div className="mencao-chip-avatar">{(value.nome || '?')[0].toUpperCase()}</div>
+        <div className="mencao-chip-body">
+          <div className="mencao-chip-nome">{value.nome || '—'}</div>
+          {value.email     && <div className="mencao-chip-email">{value.email}</div>}
+          {value.matricula && <div className="mencao-chip-email">{value.matricula}</div>}
+        </div>
+        <button type="button" className="mencao-chip-clear" onClick={clear} title="Remover">✕</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mencao-wrap">
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        placeholder={placeholder || 'Nome, e-mail ou matrícula…'}
+      />
+      {open && filtered.length > 0 && (
+        <div className="mencao-dropdown">
+          {filtered.map(u => (
+            <div key={u.id || u.email} className="mencao-item" onMouseDown={() => select(u)}>
+              <div className="mencao-item-avatar">{(u.nome || '?')[0].toUpperCase()}</div>
+              <div className="mencao-item-body">
+                <div className="mencao-item-nome">{u.nome}</div>
+                <div className="mencao-item-sub">
+                  {u.email}{u.matricula ? ` · ${u.matricula}` : ''}
+                </div>
+              </div>
+              {u.cargo && <div className="mencao-item-cargo">{u.cargo}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   COMPONENTE: PRODUCT AUTOCOMPLETE
+══════════════════════════════════════ */
+function ProductAutocomplete({ value, onChange, produtos, placeholder }) {
+  const [open, setOpen] = useState(false);
+
+  const filtered = (() => {
+    if (!open) return [];
+    if (!value) return produtos.slice(0, 10);
+    return produtos.filter(p =>
+      (p.nome || '').toLowerCase().includes(value.toLowerCase())
+    ).slice(0, 10);
+  })();
+
+  return (
+    <div className="produto-autocomplete">
+      <input
+        type="text"
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        placeholder={placeholder || 'Buscar ou digitar produto…'}
+      />
+      {open && filtered.length > 0 && (
+        <div className="produto-dropdown">
+          {filtered.map((p, i) => (
+            <div
+              key={i}
+              className="produto-item"
+              onMouseDown={() => { onChange(p.nome); setOpen(false); }}
+            >
+              {p.nome}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ══════════════════════════════════════
    PEDIDO CARD
 ══════════════════════════════════════ */
-function PedidoCard({ p, onDetalhe, onAprovar, onRecusar, onDevolver, onEstender, perm }) {
-  const dias = diasRestantes(p.devISO);
+function PedidoCard({ p, onDetalhe, onAprovar, onRecusar, onDevolver, onEstender, perm, userEmail }) {
+  const dias  = diasRestantes(p.devISO);
+  const { sol, con } = getPartes(p);
+
+  const isMeSol = userEmail && sol.email && sol.email.toLowerCase() === userEmail.toLowerCase();
+  const isMeCon = userEmail && con.email && con.email.toLowerCase() === userEmail.toLowerCase();
 
   return (
     <div className={`pedido-card ${p.status || ''}`}>
@@ -73,14 +238,31 @@ function PedidoCard({ p, onDetalhe, onAprovar, onRecusar, onDevolver, onEstender
               </span>
             )}
           </div>
+
+          {/* Chips solicitante → concedente com email */}
           <div className="pedido-partes">
-            <span className="parte-chip">{p.solicitante || p.criadoPorNome || '—'}</span>
+            <div className="parte-chip-wrap">
+              <span className={`parte-chip${isMeSol ? ' eu' : ''}`}>{sol.nome}</span>
+              {sol.email && <span className="parte-chip-email">{sol.email}</span>}
+            </div>
             <span className="arrow">→</span>
-            <span className="parte-chip">{p.concedente || '—'}</span>
-            {p.mgSolicitante && <span className="parte-chip" style={{ color: 'var(--indigo)', borderColor: 'var(--indigo)' }}>{p.mgSolicitante}</span>}
-            {p.mgConcedente  && <span className="parte-chip" style={{ color: 'var(--verde)',  borderColor: 'var(--verde)'  }}>{p.mgConcedente}</span>}
+            <div className="parte-chip-wrap">
+              <span className={`parte-chip${isMeCon ? ' eu' : ''}`}>{con.nome}</span>
+              {con.email && <span className="parte-chip-email">{con.email}</span>}
+            </div>
+            {p.mgSolicitante && (
+              <span className="parte-chip" style={{ color: 'var(--indigo)', borderColor: 'var(--indigo)' }}>
+                {p.mgSolicitante}
+              </span>
+            )}
+            {p.mgConcedente && (
+              <span className="parte-chip" style={{ color: 'var(--verde)', borderColor: 'var(--verde)' }}>
+                {p.mgConcedente}
+              </span>
+            )}
           </div>
         </div>
+
         <span className={statusBadgeCls(p.status)}>
           {p.status === 'pendente'             && '⏳ '}
           {p.status === 'aprovado'             && '✅ '}
@@ -95,7 +277,9 @@ function PedidoCard({ p, onDetalhe, onAprovar, onRecusar, onDevolver, onEstender
       <div className="pedido-info">
         <div>
           <div className="info-label">Criado em</div>
-          <div className="info-value">{fmtData(p.criadoEm?.toDate ? p.criadoEm.toDate().toISOString().slice(0,10) : p.criadoEm)}</div>
+          <div className="info-value">
+            {fmtData(p.criadoEm?.toDate ? p.criadoEm.toDate().toISOString().slice(0,10) : p.criadoEm)}
+          </div>
         </div>
         {p.devISO && (
           <div>
@@ -125,9 +309,9 @@ function PedidoCard({ p, onDetalhe, onAprovar, onRecusar, onDevolver, onEstender
       </div>
 
       {/* Materiais */}
-      {p.materiais?.length > 0 && (
+      {(p.materiais?.length > 0 || p.itens?.length > 0) && (
         <div className="pedido-materiais">
-          📦 {p.materiais.join(' · ')}
+          📦 {(p.materiais || p.itens || []).join(' · ')}
         </div>
       )}
 
@@ -186,29 +370,54 @@ function PedidoCard({ p, onDetalhe, onAprovar, onRecusar, onDevolver, onEstender
 ══════════════════════════════════════ */
 function ModalNovoPedido({ onClose, onSalvo }) {
   const { user } = useAuth();
-  const [saving, setSaving]     = useState(false);
+  const usuarios = useUsuariosLista();
+  const produtos = useProdutos();
+
+  const [saving,   setSaving]   = useState(false);
   const [materiais, setMateriais] = useState(['']);
-  const [form, setForm]         = useState({
-    numeroPedido: '', solicitante: user?.nome || '', concedente: '',
-    produto: '', produtoConcedente: '', mgSolicitante: '', mgConcedente: '',
-    devISO: '', observacao: '', tipo: 'Empréstimo',
+
+  // Solicitante e concedente como objetos (mencao widget)
+  const [solicitanteObj, setSolicitanteObj] = useState(
+    user ? { nome: user.nome || user.email, email: user.email, matricula: user.matricula } : null
+  );
+  const [concedenteObj, setConcedenteObj] = useState(null);
+
+  const [form, setForm] = useState({
+    numeroPedido:    '',
+    produto:         '',
+    produtoConcedente: '',
+    mgSolicitante:   '',
+    mgConcedente:    '',
+    inicioISO:       '',
+    devISO:          '',
+    observacao:      '',
+    tipo:            'Empréstimo',
   });
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
-
-  function addMaterial()    { setMateriais(m => [...m, '']); }
-  function setMaterial(i,v) { setMateriais(m => m.map((x,j) => j===i ? v : x)); }
-  function removeMaterial(i){ setMateriais(m => m.filter((_,j) => j!==i)); }
+  function addMaterial()     { setMateriais(m => [...m, '']); }
+  function setMaterial(i, v) { setMateriais(m => m.map((x, j) => j === i ? v : x)); }
+  function removeMaterial(i) { setMateriais(m => m.filter((_, j) => j !== i)); }
 
   async function salvar() {
     if (!form.produto.trim()) { alert('Informe o produto solicitante.'); return; }
+    if (!solicitanteObj)      { alert('Informe o solicitante.');         return; }
     setSaving(true);
     try {
       const payload = {
         ...form,
+        // Campos legado + novo formato para compatibilidade total
+        solicitante:       solicitanteObj?.nome  || '',
+        concedente:        concedenteObj?.nome   || '',
+        solicitanteNome:   solicitanteObj?.nome  || '',
+        solicitanteEmail:  solicitanteObj?.email || '',
+        nomeSolicitanteForm: solicitanteObj?.nome || '',
+        concedenteNome:    concedenteObj?.nome   || '',
+        concedenteEmail:   concedenteObj?.email  || '',
+        nomeResponsavel:   concedenteObj?.nome   || '',
         materiais: materiais.filter(m => m.trim()),
-        criadoPor: user?.uid,
-        criadoPorNome: user?.nome || user?.email,
+        criadoPor:         user?.uid,
+        criadoPorNome:     user?.nome || user?.email,
         status: 'pendente',
       };
       await api.post('/pedidos', payload);
@@ -243,19 +452,29 @@ function ModalNovoPedido({ onClose, onSalvo }) {
         <div className="modal-body">
           {/* Número do pedido */}
           <div className="field">
-            <label>Número do pedido <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(opcional)</span></label>
+            <label>Número do pedido <span className="opcional">(opcional)</span></label>
             <input type="text" value={form.numeroPedido} onChange={e => set('numeroPedido', e.target.value)} placeholder="Ex: 0001, OS-4521…" />
           </div>
 
-          {/* Solicitante + Concedente */}
+          {/* Solicitante + Concedente — mencao widget */}
           <div className="field-row">
             <div className="field">
               <label>Solicitante</label>
-              <input type="text" value={form.solicitante} onChange={e => set('solicitante', e.target.value)} placeholder="Nome de quem solicita" />
+              <UserSearch
+                value={solicitanteObj}
+                onChange={setSolicitanteObj}
+                usuarios={usuarios}
+                placeholder="Buscar solicitante…"
+              />
             </div>
             <div className="field">
-              <label>Concedente</label>
-              <input type="text" value={form.concedente} onChange={e => set('concedente', e.target.value)} placeholder="Nome do concedente" />
+              <label>Concedente <span className="opcional">(opcional)</span></label>
+              <UserSearch
+                value={concedenteObj}
+                onChange={setConcedenteObj}
+                usuarios={usuarios}
+                placeholder="Buscar concedente…"
+              />
             </div>
           </div>
 
@@ -277,13 +496,18 @@ function ModalNovoPedido({ onClose, onSalvo }) {
                 <option value="Arte">Arte</option>
               </select>
             </label>
-            <input type="text" value={form.produto} onChange={e => set('produto', e.target.value)} placeholder="Ex: Acervo Dressing — Figurinos Épocas" />
+            <ProductAutocomplete
+              value={form.produto}
+              onChange={v => set('produto', v)}
+              produtos={produtos}
+              placeholder="Buscar ou digitar produto solicitante…"
+            />
           </div>
 
           {/* Produto concedente + MG */}
           <div className="field">
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Produto Concedente <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(opcional)</span></span>
+              <span>Produto Concedente <span className="opcional">(opcional)</span></span>
               <select
                 value={form.mgConcedente}
                 onChange={e => set('mgConcedente', e.target.value)}
@@ -298,7 +522,12 @@ function ModalNovoPedido({ onClose, onSalvo }) {
                 <option value="Arte">Arte</option>
               </select>
             </label>
-            <input type="text" value={form.produtoConcedente} onChange={e => set('produtoConcedente', e.target.value)} placeholder="Identificação/código interno do concedente" />
+            <ProductAutocomplete
+              value={form.produtoConcedente}
+              onChange={v => set('produtoConcedente', v)}
+              produtos={produtos}
+              placeholder="Identificação/código do concedente…"
+            />
           </div>
 
           {/* Datas */}
@@ -347,7 +576,7 @@ function ModalNovoPedido({ onClose, onSalvo }) {
 
           {/* Observação */}
           <div className="field">
-            <label>Observação <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(opcional)</span></label>
+            <label>Observação <span className="opcional">(opcional)</span></label>
             <textarea value={form.observacao} onChange={e => set('observacao', e.target.value)} placeholder="Alguma observação importante…" rows={3} />
           </div>
         </div>
@@ -370,6 +599,7 @@ function ModalAprovar({ pedido, onClose, onFeito }) {
   const [devISO, setDevISO] = useState(pedido.devISO || '');
   const [obs, setObs]       = useState('');
   const [saving, setSaving] = useState(false);
+  const { sol } = getPartes(pedido);
 
   async function confirmar() {
     setSaving(true);
@@ -393,7 +623,7 @@ function ModalAprovar({ pedido, onClose, onFeito }) {
         </div>
         <div className="modal-body">
           <p style={{ fontSize: 13, color: 'var(--label)', marginBottom: 16 }}>
-            Confirme a aprovação do empréstimo de <strong>{pedido.produto}</strong> para <strong>{pedido.solicitante}</strong>.
+            Confirme a aprovação do empréstimo de <strong>{pedido.produto}</strong> para <strong>{sol.nome}</strong>.
           </p>
           <div className="field">
             <label>Data de devolução</label>
@@ -401,7 +631,7 @@ function ModalAprovar({ pedido, onClose, onFeito }) {
             <div className="field-hint">Deixe em branco se não houver prazo definido.</div>
           </div>
           <div className="field">
-            <label>Observação da aprovação <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(opcional)</span></label>
+            <label>Observação da aprovação <span className="opcional">(opcional)</span></label>
             <textarea value={obs} onChange={e => setObs(e.target.value)} placeholder="Ex: Material disponível a partir de segunda-feira…" rows={3} />
           </div>
         </div>
@@ -476,6 +706,7 @@ function ModalDevolver({ pedido, onClose, onFeito }) {
   const [foto, setFoto]         = useState(null);
   const [saving, setSaving]     = useState(false);
   const fileRef = useRef();
+  const { sol } = getPartes(pedido);
 
   async function confirmar() {
     setSaving(true);
@@ -503,24 +734,20 @@ function ModalDevolver({ pedido, onClose, onFeito }) {
         </div>
         <div className="modal-body">
           <p style={{ fontSize: 13, color: 'var(--label)', marginBottom: 16 }}>
-            Confirmando a devolução de <strong>{pedido.produto}</strong> de <strong>{pedido.solicitante}</strong>.
+            Confirmando a devolução de <strong>{pedido.produto}</strong> de <strong>{sol.nome}</strong>.
           </p>
 
           <div className="field">
-            <label>Observação da devolução <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(opcional)</span></label>
+            <label>Observação da devolução <span className="opcional">(opcional)</span></label>
             <textarea value={obs} onChange={e => setObs(e.target.value)} placeholder="Estado do material, comentários…" rows={3} />
           </div>
 
-          {/* Foto comprovante */}
           <div className="field">
-            <label>Foto comprovante <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(opcional)</span></label>
+            <label>Foto comprovante <span className="opcional">(opcional)</span></label>
             <div className="foto-upload" onClick={() => fileRef.current?.click()}>
               {foto
                 ? <span style={{ color: 'var(--verde)' }}>📎 {foto.name}</span>
-                : <>
-                    <span className="icon">📷</span>
-                    Clique para anexar foto da devolução
-                  </>
+                : <><span className="icon">📷</span> Clique para anexar foto da devolução</>
               }
             </div>
             <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
@@ -529,11 +756,7 @@ function ModalDevolver({ pedido, onClose, onFeito }) {
 
           <hr className="sep" />
 
-          {/* Ocorrência toggle */}
-          <div
-            className={`ocorr-toggle${ocorrencia ? ' ativo' : ''}`}
-            onClick={() => setOcorr(o => !o)}
-          >
+          <div className={`ocorr-toggle${ocorrencia ? ' ativo' : ''}`} onClick={() => setOcorr(o => !o)}>
             <span className="toggle-icon">⚠️</span>
             <div className="toggle-label">
               <strong>Registrar ocorrência</strong>
@@ -543,7 +766,7 @@ function ModalDevolver({ pedido, onClose, onFeito }) {
           </div>
 
           {ocorrencia && (
-            <div className="ocorr-fields show" style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 8, padding: 14, marginBottom: 14 }}>
+            <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 8, padding: 14, marginBottom: 14 }}>
               <div className="field">
                 <label style={{ color: 'var(--red)' }}>Tipo de ocorrência</label>
                 <select value={tipoOcorr} onChange={e => setTipoOcorr(e.target.value)}
@@ -631,6 +854,24 @@ function ModalEstender({ pedido, onClose, onFeito }) {
    MODAL DETALHES
 ══════════════════════════════════════ */
 function ModalDetalhe({ pedido, onClose }) {
+  const dias = diasRestantes(pedido.devISO);
+  const { sol, con } = getPartes(pedido);
+
+  // fotos: array de base64 ou URLs
+  const fotos = pedido.fotos || [];
+
+  // materiais ou itens
+  const itens = pedido.materiais || pedido.itens || [];
+
+  // countdown display
+  const diasLabel = (() => {
+    if (dias === null) return null;
+    if (dias < 0)  return { txt: `${Math.abs(dias)} dias em atraso`, cls: 'err' };
+    if (dias === 0) return { txt: 'Devolução hoje',                  cls: 'warn' };
+    if (dias <= 3)  return { txt: `${dias} dias restantes`,          cls: 'warn' };
+    return           { txt: `${dias} dias restantes`,                 cls: 'ok' };
+  })();
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal modal-detalhe" onClick={e => e.stopPropagation()}>
@@ -641,40 +882,93 @@ function ModalDetalhe({ pedido, onClose }) {
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
+
         <div className="modal-body">
           {/* Produto principal */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--muted)', marginBottom: 4 }}>Produto</div>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>{pedido.produto}</div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>{pedido.produto || pedido.nomeSolicitanteForm || '—'}</div>
             {pedido.numeroPedido && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>#{pedido.numeroPedido}</div>}
+          </div>
+
+          <hr className="sep" />
+
+          {/* Partes: solicitante → concedente */}
+          <div className="detalhe-partes">
+            <div className="detalhe-parte">
+              <div className="detalhe-parte-role">📤 Solicitante</div>
+              <div className="detalhe-parte-nome">{sol.nome}</div>
+              {sol.email && <div className="detalhe-parte-email">{sol.email}</div>}
+            </div>
+            <div className="detalhe-arrow">→</div>
+            <div className="detalhe-parte">
+              <div className="detalhe-parte-role">📥 Concedente</div>
+              <div className="detalhe-parte-nome">{con.nome}</div>
+              {con.email && <div className="detalhe-parte-email">{con.email}</div>}
+            </div>
           </div>
 
           <hr className="sep" />
 
           {/* Grid de info */}
           <div className="pedido-info" style={{ marginBottom: 16 }}>
-            <div><div className="info-label">Solicitante</div><div className="info-value">{pedido.solicitante || '—'}</div></div>
-            <div><div className="info-label">Concedente</div><div className="info-value">{pedido.concedente || '—'}</div></div>
-            {pedido.mgSolicitante && <div><div className="info-label">MG Sol.</div><div className="info-value">{pedido.mgSolicitante}</div></div>}
-            {pedido.mgConcedente  && <div><div className="info-label">MG Con.</div><div className="info-value">{pedido.mgConcedente}</div></div>}
-            <div><div className="info-label">Criado em</div><div className="info-value">{fmtData(pedido.criadoEm?.toDate ? pedido.criadoEm.toDate().toISOString().slice(0,10) : pedido.criadoEm)}</div></div>
-            {pedido.devISO && <div><div className="info-label">Devolução</div><div className={`info-value ${diasRestantes(pedido.devISO) < 0 ? 'err' : 'ok'}`}>{fmtData(pedido.devISO)}</div></div>}
+            <div>
+              <div className="info-label">Criado em</div>
+              <div className="info-value">
+                {fmtData(pedido.criadoEm?.toDate ? pedido.criadoEm.toDate().toISOString().slice(0,10) : pedido.criadoEm)}
+              </div>
+            </div>
+            {pedido.inicioISO && (
+              <div>
+                <div className="info-label">Início</div>
+                <div className="info-value">{fmtData(pedido.inicioISO)}</div>
+              </div>
+            )}
+            {pedido.devISO && (
+              <div>
+                <div className="info-label">Devolução</div>
+                <div className={`info-value ${diasLabel?.cls || ''}`}>
+                  {fmtData(pedido.devISO)}
+                  {diasLabel && (
+                    <div style={{ fontSize: 10, marginTop: 2, fontWeight: 700 }}>{diasLabel.txt}</div>
+                  )}
+                </div>
+              </div>
+            )}
+            {pedido.mgSolicitante && (
+              <div>
+                <div className="info-label">MG Solicitante</div>
+                <div className="info-value" style={{ color: 'var(--indigo)' }}>{pedido.mgSolicitante}</div>
+              </div>
+            )}
+            {pedido.mgConcedente && (
+              <div>
+                <div className="info-label">MG Concedente</div>
+                <div className="info-value" style={{ color: 'var(--verde)' }}>{pedido.mgConcedente}</div>
+              </div>
+            )}
+            {pedido.codigo && (
+              <div>
+                <div className="info-label">Código</div>
+                <div className="info-value">{pedido.codigo}</div>
+              </div>
+            )}
           </div>
 
           {/* Produto concedente */}
           {pedido.produtoConcedente && (
-            <div className="field" style={{ marginBottom: 12 }}>
-              <div className="info-label">Produto Concedente</div>
+            <div style={{ marginBottom: 12 }}>
+              <div className="info-label" style={{ marginBottom: 4 }}>Produto Concedente</div>
               <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600 }}>{pedido.produtoConcedente}</div>
             </div>
           )}
 
           {/* Materiais */}
-          {pedido.materiais?.length > 0 && (
+          {itens.length > 0 && (
             <div style={{ marginBottom: 12 }}>
-              <div className="info-label" style={{ marginBottom: 6 }}>Materiais</div>
+              <div className="info-label" style={{ marginBottom: 6 }}>Materiais / Itens</div>
               <div className="pedido-materiais">
-                {pedido.materiais.map((m, i) => <div key={i}>• {m}</div>)}
+                {itens.map((m, i) => <div key={i}>• {m}</div>)}
               </div>
             </div>
           )}
@@ -689,12 +983,41 @@ function ModalDetalhe({ pedido, onClose }) {
 
           {/* Ocorrência */}
           {pedido.ocorrencia?.tipo && (
-            <div className="ocorrencia-box">
+            <div className="ocorrencia-box" style={{ marginBottom: 12 }}>
               <div style={{ fontWeight: 800, marginBottom: 4 }}>⚠️ {pedido.ocorrencia.tipo}</div>
               {pedido.ocorrencia.descricao && <div style={{ fontWeight: 500 }}>{pedido.ocorrencia.descricao}</div>}
             </div>
           )}
+
+          {/* Retorno checklist ISO */}
+          {(pedido.retISO || pedido.devISO) && pedido.status === 'devolvido' && (
+            <div style={{ marginBottom: 12 }}>
+              <div className="info-label" style={{ marginBottom: 4 }}>Devolvido em</div>
+              <div style={{ fontSize: 13, color: 'var(--verde)', fontWeight: 700 }}>
+                {fmtData(pedido.retISO || pedido.devolvidoEm)}
+              </div>
+            </div>
+          )}
+
+          {/* Fotos */}
+          {fotos.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div className="info-label" style={{ marginBottom: 6 }}>Fotos</div>
+              <div className="fotos-grid">
+                {fotos.map((f, i) => (
+                  <img
+                    key={i}
+                    className="foto-thumb"
+                    src={f.startsWith('data:') ? f : `data:image/jpeg;base64,${f}`}
+                    alt={`Foto ${i + 1}`}
+                    onClick={() => window.open(f.startsWith('data:') ? f : `data:image/jpeg;base64,${f}`, '_blank')}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
         </div>
@@ -730,11 +1053,10 @@ const TAB_STATUS = {
 };
 
 export default function Emprestimos() {
-  const { perm } = useAuth();
-  const [tab, setTab]       = useState('Todos');
-  const [busca, setBusca]   = useState('');
+  const { user, perm } = useAuth();
+  const [tab,   setTab]   = useState('Todos');
+  const [busca, setBusca] = useState('');
 
-  // Modais
   const [modalNovo,     setModalNovo]     = useState(false);
   const [modalDetalhe,  setModalDetalhe]  = useState(null);
   const [modalAprovar,  setModalAprovar]  = useState(null);
@@ -744,29 +1066,23 @@ export default function Emprestimos() {
 
   const { pedidos: todosPedidos, loading, error, carregar: refresh } = usePedidos({});
 
-  // Filtragem local por aba e busca
   const pedidosFiltrados = todosPedidos.filter(p => {
     const statusOk = !TAB_STATUS[tab] || p.status === TAB_STATUS[tab];
     if (!statusOk) return false;
     if (!busca) return true;
     const q = busca.toLowerCase();
+    const { sol, con } = getPartes(p);
     return (
-      p.produto?.toLowerCase().includes(q) ||
-      p.solicitante?.toLowerCase().includes(q) ||
-      p.concedente?.toLowerCase().includes(q) ||
+      p.produto?.toLowerCase().includes(q)              ||
+      sol.nome.toLowerCase().includes(q)                ||
+      sol.email.toLowerCase().includes(q)               ||
+      con.nome.toLowerCase().includes(q)                ||
+      con.email.toLowerCase().includes(q)               ||
       String(p.numeroPedido || '').toLowerCase().includes(q)
     );
   });
 
-  const pedidos = pedidosFiltrados;
-
-  // Contagens para badges
   const nPendentes = todosPedidos.filter(p => p.status === 'pendente').length;
-
-  function fecharTudo() {
-    setModalNovo(false); setModalDetalhe(null); setModalAprovar(null);
-    setModalRecusar(null); setModalDevolver(null); setModalEstender(null);
-  }
 
   if (loading) return (
     <div className="loading-full">
@@ -780,15 +1096,10 @@ export default function Emprestimos() {
 
   return (
     <>
-      {/* ── Cabeçalho da página ── */}
       <div className="section-header">
         <div className="module-tabs">
           {TABS_EAC.map(t => (
-            <div
-              key={t}
-              className={`module-tab${tab === t ? ' active' : ''}`}
-              onClick={() => setTab(t)}
-            >
+            <div key={t} className={`module-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
               {t}
               {t === 'Pendentes' && nPendentes > 0 && (
                 <span style={{ marginLeft: 6, background: 'var(--amber)', color: '#111', fontSize: 10, fontWeight: 800, borderRadius: 99, padding: '0 5px' }}>{nPendentes}</span>
@@ -805,19 +1116,17 @@ export default function Emprestimos() {
         )}
       </div>
 
-      {/* ── Busca ── */}
       <div className="busca-wrap">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input
           className="busca-input"
           type="text"
-          placeholder="Buscar por produto, solicitante, concedente ou código…"
+          placeholder="Buscar por produto, nome, e-mail ou código…"
           value={busca}
           onChange={e => setBusca(e.target.value)}
         />
       </div>
 
-      {/* ── Lista ── */}
       {pedidosFiltrados.length === 0 ? (
         <EmptyState
           icon={
@@ -835,6 +1144,7 @@ export default function Emprestimos() {
               key={p.id}
               p={p}
               perm={perm}
+              userEmail={user?.email}
               onDetalhe={setModalDetalhe}
               onAprovar={setModalAprovar}
               onRecusar={setModalRecusar}
@@ -846,7 +1156,7 @@ export default function Emprestimos() {
       )}
 
       {/* ══ MODAIS ══ */}
-      {modalNovo     && <ModalNovoPedido onClose={() => setModalNovo(false)} onSalvo={refresh} />}
+      {modalNovo     && <ModalNovoPedido onClose={() => setModalNovo(false)}    onSalvo={refresh} />}
       {modalDetalhe  && <ModalDetalhe   pedido={modalDetalhe}  onClose={() => setModalDetalhe(null)} />}
       {modalAprovar  && <ModalAprovar   pedido={modalAprovar}  onClose={() => setModalAprovar(null)}  onFeito={refresh} />}
       {modalRecusar  && <ModalRecusar   pedido={modalRecusar}  onClose={() => setModalRecusar(null)}  onFeito={refresh} />}
