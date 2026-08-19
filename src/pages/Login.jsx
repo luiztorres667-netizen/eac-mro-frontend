@@ -60,14 +60,23 @@ export default function Login() {
   }
 
   const setores = ['MG1','MG2','MG3','MG4','Cenografia','Arte'];
-  const cargos  = ['Aux. Almoxarifado','Almoxarife','Encarregado','Supervisor','Coordenador','Gerente','Gerente Geral','Solicitante/Responsável'];
+  const cargos  = ['Aux. Almoxarifado','Almoxarife','Encarregado','Supervisor','Coordenador','Gerente','Gerente Geral'];
 
   return (
     <div className="login-wrap">
       {/* ── Login ── */}
       {tab === 'login' && (
         <div className="login-card">
-          <div className="login-logo">MRO</div>
+          {/* Logo MRO */}
+          <div className="login-logo">
+            <span className="login-logo-mr">MR</span>
+            <svg className="login-logo-o" viewBox="0 0 28 28" fill="none">
+              <circle cx="14" cy="14" r="12" fill="#00ce7c"/>
+              <circle cx="14" cy="14" r="7" fill="var(--card)"/>
+              <circle cx="14" cy="14" r="2.8" fill="white"/>
+            </svg>
+          </div>
+          <div className="login-tagline">nós ativamos a <strong>eficiência</strong></div>
           <div className="login-titulo">Entrar no sistema</div>
           {erro && <div className="alert alert-error">{erro}</div>}
           <form onSubmit={handleLogin}>

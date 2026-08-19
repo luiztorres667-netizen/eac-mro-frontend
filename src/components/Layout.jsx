@@ -49,10 +49,11 @@ function LogoMRO({ collapsed }) {
   return (
     <div className="logo-mro">
       <span className="logo-letters">MR</span>
-      {/* O com estilo especial */}
-      <svg className="logo-o-svg" viewBox="0 0 26 26" fill="none">
-        <circle cx="13" cy="13" r="11" stroke="#00ce7c" strokeWidth="2.5"/>
-        <text x="13" y="18" textAnchor="middle" fill="#00ce7c" fontSize="13" fontWeight="800" fontFamily="Raleway,sans-serif">O</text>
+      {/* O — anel verde com ponto branco (identidade MRO) */}
+      <svg className="logo-o-svg" viewBox="0 0 28 28" fill="none">
+        <circle cx="14" cy="14" r="12" fill="#00ce7c"/>
+        <circle cx="14" cy="14" r="7" fill="var(--surface)"/>
+        <circle cx="14" cy="14" r="2.8" fill="white"/>
       </svg>
     </div>
   );
@@ -114,7 +115,7 @@ export default function Layout() {
           <LogoMRO collapsed={collapsed} />
           <div className="sidebar-collapsible">
             <div className="logo-tagline">
-              Manutenção, Reparo &amp; <span>Operação</span>
+              nós ativamos a <span>eficiência</span>
             </div>
           </div>
         </div>

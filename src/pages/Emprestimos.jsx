@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { collection, getDocs }                       from 'firebase/firestore';
-import { db }                                         from '../firebase';
-import { useAuth }                                    from '../contexts/AuthContext';
-import { usePedidos }                                 from '../hooks/usePedidos';
-import { api, usuariosApi }                           from '../api';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { collection, getDocs }                               from 'firebase/firestore';
+import { db }                                                 from '../firebase';
+import { useAuth }                                            from '../contexts/AuthContext';
+import { usePedidos }                                         from '../hooks/usePedidos';
+import { api, usuariosApi }                                   from '../api';
+import { CONTEUDOS }                                          from '../data/conteudos';
 
 /* ══════════════════════════════════════
    HELPERS
@@ -176,37 +177,183 @@ function UserSearch({ value, onChange, usuarios, placeholder }) {
 
 /* ══════════════════════════════════════
    COMPONENTE: PRODUCT AUTOCOMPLETE
+   – Combina CSV (CONTEUDOS) + Firestore
+   – Só mostra predições quando há texto
+   – Navegação por teclado ↑↓ Enter Esc
 ══════════════════════════════════════ */
 function ProductAutocomplete({ value, onChange, produtos, placeholder }) {
   const [open, setOpen] = useState(false);
+  const [idx,  setIdx]  = useState(-1);
 
-  const filtered = (() => {
-    if (!open) return [];
-    if (!value) return produtos.slice(0, 10);
-    return produtos.filter(p =>
-      (p.nome || '').toLowerCase().includes(value.toLowerCase())
-    ).slice(0, 10);
-  })();
+  // Mescla nomes do Firestore com os do CSV, sem duplicatas
+  const allNomes = useMemo(() => {
+    const fromFS = produtos.map(p => p.nome).filter(Boolean);
+    return [...new Set([...fromFS, ...CONTEUDOS])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [produtos]);
+
+  const q = (value || '').trim();
+
+  // REGRA-CHAVE: nada aparece se o campo estiver vazio
+  const filtered = useMemo(() => {
+    if (!open || !q) return [];
+    const lower = q.toLowerCase();
+    return allNomes.filter(n => n.toLowerCase().includes(lower)).slice(0, 10);
+  }, [open, q, allNomes]);
+
+  function select(nome) {
+    onChange(nome);
+    setOpen(false);
+    setIdx(-1);
+  }
+
+  function handleChange(e) {
+    const v = e.target.value;
+    onChange(v);
+    setIdx(-1);
+    // Abre só se tiver texto; fecha imediatamente se apagar tudo
+    setOpen(!!v.trim());
+  }
+
+  function handleFocus() {
+    if (q) setOpen(true);  // Não abre se vazio
+  }
+
+  function handleKeyDown(e) {
+    if (!filtered.length) return;
+    if (e.key === 'ArrowDown')  { e.preventDefault(); setIdx(i => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp')    { e.preventDefault(); setIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); select(filtered[idx]); }
+    else if (e.key === 'Escape')     { setOpen(false); setIdx(-1); }
+  }
 
   return (
     <div className="produto-autocomplete">
       <input
         type="text"
         value={value}
-        onChange={e => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 200)}
-        placeholder={placeholder || 'Buscar ou digitar produto…'}
+        onChange={handleChange}
+        onFocus={handleFocus}
+        onBlur={() => setTimeout(() => { setOpen(false); setIdx(-1); }, 180)}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder || 'Buscar conteúdo…'}
+        autoComplete="off"
       />
       {open && filtered.length > 0 && (
         <div className="produto-dropdown">
-          {filtered.map((p, i) => (
+          {filtered.map((nome, i) => (
             <div
               key={i}
-              className="produto-item"
-              onMouseDown={() => { onChange(p.nome); setOpen(false); }}
+              className={`produto-item${i === idx ? ' selected' : ''}`}
+              onMouseDown={() => select(nome)}
+              onMouseEnter={() => setIdx(i)}
             >
-              {p.nome}
+              {/* Destaca o trecho que bate com a busca */}
+              <HighlightMatch text={nome} query={q} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Destaca parte do texto que bate com a query ── */
+function HighlightMatch({ text, query }) {
+  if (!query) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark style={{ background: 'rgba(0,206,124,.25)', color: 'var(--verde)', borderRadius: 2, padding: '0 1px' }}>
+        {text.slice(idx, idx + query.length)}
+      </mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
+/* ══════════════════════════════════════
+   COMPONENTE: SEARCH AUTOCOMPLETE
+   – Barra de busca principal com predição
+   – Só mostra quando há texto digitado
+══════════════════════════════════════ */
+function SearchAutocomplete({ value, onChange, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const [idx,  setIdx]  = useState(-1);
+
+  const q = (value || '').trim();
+
+  const filtered = useMemo(() => {
+    if (!open || !q) return [];
+    const lower = q.toLowerCase();
+    return CONTEUDOS.filter(n => n.toLowerCase().includes(lower)).slice(0, 8);
+  }, [open, q]);
+
+  function select(nome) {
+    onChange(nome);
+    setOpen(false);
+    setIdx(-1);
+  }
+
+  function handleChange(e) {
+    const v = e.target.value;
+    onChange(v);
+    setIdx(-1);
+    setOpen(!!v.trim());
+  }
+
+  function handleKeyDown(e) {
+    if (!filtered.length) return;
+    if (e.key === 'ArrowDown')  { e.preventDefault(); setIdx(i => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp')    { e.preventDefault(); setIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); select(filtered[idx]); }
+    else if (e.key === 'Escape')     { setOpen(false); setIdx(-1); onChange(''); }
+  }
+
+  return (
+    <div className="busca-autocomplete">
+      <div className="busca-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input
+          className="busca-input"
+          type="text"
+          placeholder={placeholder || 'Buscar por produto, nome, e-mail ou código…'}
+          value={value}
+          onChange={handleChange}
+          onFocus={() => { if (q) setOpen(true); }}
+          onBlur={() => setTimeout(() => { setOpen(false); setIdx(-1); }, 180)}
+          onKeyDown={handleKeyDown}
+          autoComplete="off"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => { onChange(''); setOpen(false); }}
+            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: '0 6px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+            title="Limpar busca"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        )}
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="busca-dropdown">
+          {filtered.map((nome, i) => (
+            <div
+              key={i}
+              className={`busca-item${i === idx ? ' selected' : ''}`}
+              onMouseDown={() => select(nome)}
+              onMouseEnter={() => setIdx(i)}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: .5 }}>
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <HighlightMatch text={nome} query={q} />
             </div>
           ))}
         </div>
@@ -1123,16 +1270,11 @@ export default function Emprestimos() {
         )}
       </div>
 
-      <div className="busca-wrap">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input
-          className="busca-input"
-          type="text"
-          placeholder="Buscar por produto, nome, e-mail ou código…"
-          value={busca}
-          onChange={e => setBusca(e.target.value)}
-        />
-      </div>
+      <SearchAutocomplete
+        value={busca}
+        onChange={setBusca}
+        placeholder="Buscar por conteúdo, nome, e-mail ou código…"
+      />
 
       {pedidosFiltrados.length === 0 ? (
         <EmptyState

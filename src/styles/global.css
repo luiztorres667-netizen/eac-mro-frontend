@@ -18,12 +18,12 @@
   --verde-dim:  #00ce7c14;
   --verde-dark: #00a862;
 
-  /* Fundos — cinza-azulado neutro */
-  --bg:         #10131a;
-  --surface:    #16191f;
-  --card:       #1c2028;
-  --border:     #2a2f3d;
-  --border-s:   #222632;
+  /* Fundos — azul-marinho profundo (identidade MRO) */
+  --bg:         #0d1119;
+  --surface:    #111b2e;
+  --card:       #18243a;
+  --border:     #1f2d45;
+  --border-s:   #192440;
 
   /* Semânticos */
   --red:        #f87171;
@@ -80,7 +80,7 @@ body {
 /* ══ SIDEBAR ══ */
 .sidebar {
   width: 228px;
-  background: var(--surface);
+  background: linear-gradient(180deg, #131f38 0%, var(--surface) 60%);
   border-right: 1px solid var(--border-s);
   flex-shrink: 0;
   display: flex;
@@ -118,17 +118,27 @@ body {
 .sidebar.collapsed .sidebar-footer { padding: 14px 0; display: flex; justify-content: center; }
 
 .sidebar-brand {
-  padding: 24px 20px 20px;
+  padding: 22px 20px 18px;
   border-bottom: 1px solid var(--border-s);
-  display: flex; flex-direction: column; gap: 12px;
+  display: flex; flex-direction: column; gap: 10px;
   transition: padding .28s;
+  position: relative;
+}
+/* Faixa verde — assinatura visual da marca */
+.sidebar-brand::after {
+  content: '';
+  position: absolute; bottom: 0; left: 20px; right: 20px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--verde) 0%, transparent 100%);
+  opacity: .35;
 }
 .logo-mro { display: flex; align-items: center; }
-.logo-letters { font-size: 26px; font-weight: 800; color: #fff; line-height: 1; }
-.logo-o-svg { display: inline-block; width: 26px; height: 26px; margin-left: 1px; }
+.logo-letters { font-size: 28px; font-weight: 800; color: #fff; line-height: 1; letter-spacing: -.01em; }
+.logo-o-svg { display: inline-block; width: 28px; height: 28px; margin-left: 2px; }
 .logo-tagline {
-  font-size: 9.5px; font-weight: 600; letter-spacing: .04em;
+  font-size: 9px; font-weight: 600; letter-spacing: .05em;
   line-height: 1.35; color: var(--muted); white-space: nowrap;
+  text-transform: lowercase;
 }
 .logo-tagline span { color: var(--verde); font-weight: 700; }
 
@@ -347,7 +357,7 @@ body {
 .status-pendente            { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber); }
 .status-aprovado            { background: var(--verde-dim); color: var(--verde); border: 1px solid var(--verde); }
 .status-recusado            { background: var(--red-dim);   color: var(--red);   border: 1px solid var(--red); }
-.status-devolvido           { background: #1a2d7a33; color: var(--label); border: 1px solid var(--border); }
+.status-devolvido           { background: rgba(61,90,173,.18); color: var(--label); border: 1px solid var(--border); }
 .status-aguardando_devolucao{ background: var(--indigo-dim); color: var(--indigo); border: 1px solid var(--indigo); }
 .status-cancelado           { background: rgba(107,114,128,.12); color: var(--muted); border: 1px solid var(--border); }
 
@@ -694,7 +704,7 @@ body.light .field textarea { background: #f5f7fc; border-color: #dde2f0; color: 
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
+  background: radial-gradient(ellipse at 50% 0%, #152040 0%, var(--bg) 65%);
   padding: 20px;
 }
 
@@ -703,28 +713,55 @@ body.light .field textarea { background: #f5f7fc; border-color: #dde2f0; color: 
   max-width: 400px;
   background: var(--card);
   border: 1px solid var(--border);
+  border-top: 3px solid var(--verde);
   border-radius: var(--radius-lg);
   padding: 36px 32px;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), 0 0 60px rgba(0,206,124,.06);
 }
 
+/* Logo MRO — tela de login */
 .login-logo {
-  font-family: var(--font);
-  font-size: 28px;
-  font-weight: 900;
-  color: var(--verde);
-  letter-spacing: .08em;
-  text-align: center;
-  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin-bottom: 6px;
 }
-
-.login-titulo {
-  font-size: 14px;
+.login-logo-mr {
+  font-family: var(--font);
+  font-size: 32px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -.01em;
+  line-height: 1;
+}
+.login-logo-o {
+  width: 32px;
+  height: 32px;
+}
+.login-tagline {
+  font-size: 10px;
   font-weight: 600;
   color: var(--muted);
   text-align: center;
-  margin-bottom: 24px;
+  letter-spacing: .06em;
+  margin-bottom: 20px;
+  text-transform: lowercase;
+}
+.login-tagline strong {
+  color: var(--verde);
+  font-weight: 700;
+}
+
+.login-titulo {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label);
+  text-align: center;
+  margin-bottom: 22px;
   letter-spacing: .02em;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-s);
 }
 
 .login-field {
